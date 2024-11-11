@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoinView</title>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            line-height: 1.6;
+        }
+
+        .container {
+            padding: 10px;
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        h1 {
+            padding: 10px;
+            font-size: 24px;
+        }
+
+        #chart-container {
+            width: 100%;
+            height: 400px;
+            background-color: #000;
+            margin-bottom: 15px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 10px;
+        }
+
+        .panel {
+            background-color: #2a2a2a;
+            padding: 15px;
+            border-radius: 5px;
+            width: 100%;
+        }
+
+        .buy-crypto, .settings, .balances {
+            min-width: 250px;
+        }
+
+        h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .buy-crypto-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        input, select {
+            background-color: #333;
+            border: 1px solid #444;
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        button {
+            background-color: #26a69a;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #2bbbad;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .settings-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .settings input[type="text"] {
+            width: 60px;
+        }
+
+        .settings input[type="checkbox"] {
+            width: auto;
+        }
+
+        .balances p {
+            font-size: 16px;
+            margin: 5px 0;
+        }
+
+        /* Responsive Design */
+        @media (min-width: 768px) {
+            .container {
+                padding: 20px;
+                max-width: 1200px;
+            }
+
+            .controls {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            .panel {
+                flex: 1;
+                min-width: 300px;
+            }
+
+            h1 {
+                font-size: 28px;
+            }
+
+            #chart-container {
+                height: 500px;
+            }
+        }
+
+        /* Large screens */
+        @media (min-width: 1200px) {
+            #chart-container {
+                height: 600px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CoinView</h1>
+        <div id="chart-container"></div>
+        
+        <div class="controls">
+            <div class="panel buy-crypto">
+                <h3>Buy Crypto</h3>
+                <div class="buy-crypto-form">
+                    <input type="number" id="amount" placeholder="eg. 0.001" step="0.001" min="0">
+                    <select id="pair">
+                        <option value="BTCUSD">BTCUSD</option>
+                    </select>
+                    <button id="buy">Buy</button>
+                </div>
+            </div>
+
+            <div class="panel settings">
+                <h3>Settings</h3>
+                <div class="settings-grid">
+                    <div class="settings-group">
+                        <input type="checkbox" id="rsi-toggle">
+                        <label for="rsi-toggle">RSI</label>
+                        <input type="text" id="rsi" value="14" size="3">
+                    </div>
+                    <div class="settings-group">
+                        <label for="overbought">Overbought</label>
+                        <input type="text" id="overbought" value="70" size="3">
+                    </div>
+                    <div class="settings-group">
+                        <label for="oversold">Oversold</label>
+                        <input type="text" id="oversold" value="30" size="3">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel balances">
+                <h3>Balances</h3>
+                <p>BTC: <span id="btc-balance">0.00517500</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        let candlestickSeries;
+        let chart;
+        const updateInterval = 60000; // 1 minute
+        let lastPrice = 100;
+
+        function resizeChart() {
+            const container = document.getElementById('chart-container');
+            if (chart) {
+                chart.applyOptions({
+                    width: container.clientWidth,
+                    height: container.clientHeight
+                });
+            }
+        }
+
+        async function main() {
+            return {
+                time: Math.floor(Date.now() / 1000),
+                open: lastPrice,
+                high: lastPrice + Math.random() * 2,
+                low: lastPrice - Math.random() * 2,
+                close: lastPrice + (Math.random() - 0.5) * 4
+            };
+        }
+
+        function initChart() {
+            chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+                layout: {
+                    background: { color: '#000000' },
+                    textColor: '#ffffff',
+                },
+                grid: {
+                    vertLines: { color: '#404040' },
+                    horzLines: { color: '#404040' },
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: true,
+                    borderColor: '#444444',
+                },
+                rightPriceScale: {
+                    borderColor: '#444444',
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+            });
+
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350'
+            });
+
+            // Generate initial data
+            const initialData = [];
+            for (let i = 0; i < 100; i++) {
+                const time = Math.floor(Date.now() / 1000) - (100 - i) * 60;
+                initialData.push({
+                    time: time,
+                    open: lastPrice,
+                    high: lastPrice + Math.random() * 2,
+                    low: lastPrice - Math.random() * 2,
+                    close: lastPrice + (Math.random() - 0.5) * 4
+                });
+                lastPrice += (Math.random() - 0.5) * 2;
+            }
+            candlestickSeries.setData(initialData);
+        }
+
+        function updateChart() {
+            main().then(data => {
+                candlestickSeries.update(data);
+                lastPrice = data.close;
+            }).catch(err => {
+                console.error('Error updating chart:', err);
+            });
+        }
+
+        // Initialize chart
+        initChart();
+        
+        // Handle window resize
+        window.addEventListener('resize', resizeChart);
+
+        // Start updating chart
+        setInterval(updateChart, updateInterval);
+
+        // Add event listeners for controls
+        document.getElementById('buy').addEventListener('click', () => {
+            const amount = document.getElementById('amount').value;
+            const pair = document.getElementById('pair').value;
+            console.log(`Buying ${amount} ${pair}`);
+        });
+    </script>
+</body>
+</html>
