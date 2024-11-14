@@ -5,23 +5,63 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoinView</title>
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <style>
+    /* General Reset */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, sans-serif; background-color: #1a1a1a; color: white; }
+
+    /* Navigation */
     nav ul { list-style: none; display: flex; justify-content: center; gap: 15px; padding: 10px; }
     nav ul li a { font-weight: bold; cursor: pointer; text-decoration: none; color: #26a69a; }
+
+    /* Tab Content */
     .tab-content { display: none; padding: 20px; }
     .tab-content.active { display: block; }
 
+    /* Container and Panels */
     .container { padding: 10px; max-width: 100%; margin: 0 auto; }
     h1 { font-size: 24px; padding: 10px; }
+    .panel { background-color: #2a2a2a; padding: 15px; border-radius: 5px; width: 100%; min-width: 250px; }
+
+    /* Chart and Controls */
     #chart-container { width: 100%; height: 400px; background-color: #000; margin-bottom: 15px; }
     .controls { display: flex; flex-direction: column; gap: 15px; padding: 10px; }
-    .panel { background-color: #2a2a2a; padding: 15px; border-radius: 5px; width: 100%; min-width: 250px; }
+
+    /* Button Group and Flash Message */
+    .button-group { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; }
+    .flash-message { display: none; padding: 8px; margin-top: 10px; border-radius: 4px; text-align: center; }
+    .flash-success { background-color: #2e7d32; color: #fff; }
+    .flash-error { background-color: #d32f2f; color: #fff; }
+
+    /* Form Elements */
     input, select { background-color: #333; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; width: 100%; }
     button { background-color: #26a69a; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 16px; }
     button:hover { background-color: #2bbbad; }
-    
+
+    /* Refresh Icon */
+    .balance-item { display: flex; justify-content: space-between; align-items: center; }
+    .refresh-button { background: none; border: none; color: #26a69a; cursor: pointer; font-size: 18px; padding: 0; }
+    .refresh-button:hover { color: #2bbbad; }
+
+    /* Loading State */
+    .loading {
+      cursor: wait;
+    }
+    .loading:before {
+      content: '🔄';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
     /* Responsive Design */
     @media (min-width: 768px) {
       .controls { flex-direction: row; flex-wrap: wrap; }
@@ -32,6 +72,8 @@
   </style>
 </head>
 <body>
+
+  <!-- Navigation -->
   <nav>
     <ul>
       <li><a href="#manualTradeRender" class="tab-link">Manual</a></li>
@@ -40,69 +82,495 @@
     </ul>
   </nav>
 
-  <!-- Manual Trade Render Tab Content -->
+  <!-- Manual Trade Tab Content -->
   <div id="manualTradeRender" class="tab-content active">
     <div class="container">
       <h1>CoinView - Manual Trading</h1>
       <div id="chart-container"></div>
       
       <div class="controls">
+        <!-- Buy Crypto Panel -->
         <div class="panel buy-crypto">
           <h3>Buy Crypto</h3>
           <div class="buy-crypto-form">
             <input type="number" id="amount" placeholder="e.g., 0.001" step="0.001" min="0">
-            <select id="pair"><option value="BTCUSD">BTCUSD</option></select>
-            <button id="buy">Buy</button>
+            <select id="pair"><option value="BTCUSDT">BTCUSDT</option></select>
+            <div class="button-group">
+              <button id="buy">Buy</button>
+              <button id="sell">Sell</button>
+            </div>
           </div>
+          <div id="flashMessage" class="flash-message"></div>
         </div>
+
+        <!-- Settings Panel -->
         <div class="panel settings">
-          <h3>Settings</h3>
-          <div class="settings-grid">
-            <div class="settings-group">
-              <input type="checkbox" id="rsi-toggle">
-              <label for="rsi-toggle">RSI</label>
-              <input type="text" id="rsi" value="14">
-            </div>
-            <div class="settings-group">
-              <label for="overbought">Overbought</label>
-              <input type="text" id="overbought" value="70">
-            </div>
-            <div class="settings-group">
-              <label for="oversold">Oversold</label>
-              <input type="text" id="oversold" value="30">
-            </div>
+          <h3>Leverage Settings</h3>
+          <div class="settings-group">
+            <label for="leverage">Leverage</label>
+            <input type="range" id="leverage" min="1" max="100" value="1" oninput="document.getElementById('leverage-value').textContent = this.value;">
+            <span id="leverage-value">1</span>
+            <button id="submitLeverage">Submit</button>
           </div>
+          <div id="leverageFlashMessage" class="flash-message"></div>
         </div>
+
+        <!-- Balances Panel -->
         <div class="panel balances">
           <h3>Balances</h3>
-          <p>BTC: <span id="btc-balance">0.00517500</span></p>
+          <div class="balance-item">
+            <p>BTC: <span id="btc-balance">0.00517500</span></p>
+            <button class="refresh-button" id="refreshBalance" title="Refresh Balance">🔄</button>
+          </div>
+          <div class="balance-item">
+            <p>Margin Balance: <span id="margin-balance">0.00517500</span></p>
+          </div>
+          <div class="balance-item">
+            <p>Available Balance: <span id="available-balance">0.00517500</span></p>
+          </div>
+          <div id="balanceFlashMessage" class="flash-message"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Replay Trade Render Tab Content -->
+  <!-- Replay Trade Tab Content -->
   <div id="replayTradeRender" class="tab-content">
     <div class="container">
       <h1>CoinView - Replay Trading</h1>
-      <!-- Replay trade content can go here -->
-      <p>Replay trading tools will be available here.</p>
+      <div id="chart-container"></div>
+      
+      <div class="controls">
+        <!-- Replay Settings Panel -->
+        <div class="panel replay-settings">
+          <h3>Replay Settings</h3>
+          <div class="replay-settings-group">
+            <label for="replay-start-date">Start Date</label>
+            <input type="date" id="replay-start-date">
+            <label for="replay-end-date">End Date</label>
+            <input type="date" id="replay-end-date">
+            <button id="start-replay">Start Replay</button>
+          </div>
+          <div id="replayFlashMessage" class="flash-message"></div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Bot Trade Render Tab Content -->
+  <!-- Bot Trade Tab Content -->
   <div id="botTradeRender" class="tab-content">
     <div class="container">
       <h1>CoinView - Bot Trading</h1>
-      <!-- Bot trade content can go here -->
-      <p>Automated bot trading settings and tools will be available here.</p>
+      <div id="chart-container"></div>
+      
+      <div class="controls">
+        <!-- Bot Settings Panel -->
+        <div class="panel bot-settings">
+          <h3>Bot Settings</h3>
+          <div class="bot-settings-group">
+            <label for="bot-strategy">Strategy</label>
+            <select id="bot-strategy">
+              <option value="strategy1">Strategy 1</option>
+              <option value="strategy2">Strategy 2</option>
+            </select>
+            <button id="start-bot">Start Bot</button>
+          </div>
+          <div id="botFlashMessage" class="flash-message"></div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <script type="module">
+  <script>
+    const API_KEY = "lDbuOjdRhGp69J7hFh";
+    const API_SECRET = "Wer1l5DC9Xxm9QiMRikWTo0IlPxom8EaNzjg";
+    const BASE_URL = "https://api-demo.bybit.com";
+
+    // Function to generate signature for wallet balance
+    function generateSignature(timestamp, apiKey, recvWindow, params) {
+      // Sort params alphabetically
+      const sortedParams = Object.keys(params)
+        .sort()
+        .reduce((acc, key) => {
+          acc[key] = params[key];
+          return acc;
+        }, {});
+
+      // Create query string
+      const queryString = Object.entries(sortedParams)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('&');
+
+      // Create signature string
+      const signatureString = `${timestamp}${apiKey}${recvWindow}${queryString}`;
+
+      // Generate HMAC SHA256 signature
+      return CryptoJS.HmacSHA256(signatureString, API_SECRET).toString();
+    }
+
+    // Function to get wallet balance
+    async function getWalletBalance(accountType = "UNIFIED", coin = "BTC", recvWindow = "5000") {
+      const timestamp = Date.now().toString();
+      const params = {
+        accountType: accountType
+      };
+      if (coin) {
+        params.coin = coin;
+      }
+
+      const signature = generateSignature(timestamp, API_KEY, recvWindow, params);
+
+      const headers = {
+        "X-BAPI-API-KEY": API_KEY,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recvWindow,
+        "X-BAPI-SIGN": signature
+      };
+
+      const queryString = new URLSearchParams(params).toString();
+      const url = `${BASE_URL}/v5/account/wallet-balance?${queryString}`;
+
+      try {
+        const response = await fetch(url, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          return data;
+        } else {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+      } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        throw error;
+      }
+    }
+
+    // Function to update balance display
+    function updateBalanceDisplay(data) {
+      if (data.retCode === 0 && data.result.list && data.result.list[0]) {
+        const balances = data.result.list[0];
+        document.getElementById('btc-balance').textContent = 
+          parseFloat(balances.totalAvailableBalance).toFixed(8);
+        document.getElementById('margin-balance').textContent = 
+          parseFloat(balances.totalMarginBalance).toFixed(8);
+        document.getElementById('available-balance').textContent = 
+          parseFloat(balances.totalAvailableBalance).toFixed(8);
+      } else {
+        throw new Error('Invalid response format');
+      }
+    }
+
+    // Function to handle refresh button click
+    async function handleRefreshBalance() {
+      const refreshButton = document.getElementById('refreshBalance');
+      refreshButton.classList.add('loading');
+      refreshButton.disabled = true;
+
+      try {
+        const data = await getWalletBalance();
+        updateBalanceDisplay(data);
+        showFlashMessage('Balance updated successfully', true, 'balanceFlashMessage');
+      } catch (error) {
+        showFlashMessage(`Error updating balance: ${error.message}`, false, 'balanceFlashMessage');
+      } finally {
+        refreshButton.classList.remove('loading');
+        refreshButton.disabled = false;
+      }
+    }
+
+    // Event listener for refresh button
+    document.getElementById('refreshBalance').addEventListener('click', handleRefreshBalance);
+
+    // Function to place a market order
+    async function placeMarketOrder(apiKey, apiSecret, baseurl, {
+      category = "linear",
+      symbol = "BTCUSDT",
+      side = "Sell",
+      orderType = "Market",
+      qty = "0.001",
+      recvWindow = "5000"
+    } = {}) {
+      const requestBody = JSON.stringify({
+        category: category,
+        symbol: symbol,
+        side: side,
+        orderType: orderType,
+        qty: qty
+      });
+
+      const timestamp = Date.now().toString();
+      const requestString = timestamp + apiKey + recvWindow + requestBody;
+      const signature = CryptoJS.HmacSHA256(requestString, apiSecret).toString();
+
+      const headers = {
+        "X-BAPI-API-KEY": apiKey,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-SIGN": signature,
+        "X-BAPI-RECV-WINDOW": recvWindow,
+        "Content-Type": "application/json"
+      };
+
+      const endpoint = "/v5/order/create";
+      const url = `${baseurl}${endpoint}`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: headers,
+          body: requestBody
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          return data;
+        } else {
+          const errorText = await response.text();
+          return { error: response.status, message: errorText };
+        }
+      } catch (error) {
+        return { error: "Network error", message: error.message };
+      }
+    }
+
+    // Function to set leverage
+    async function setLeverage(apiKey, apiSecret, baseurl, {
+      category = "linear",
+      symbol = "BTCUSDT",
+      buyLeverage,
+      sellLeverage,
+      recvWindow = "5000"
+    } = {}) {
+      // Convert leverage values to strings to ensure consistent handling
+      const buyLeverageStr = String(buyLeverage);
+      const sellLeverageStr = String(sellLeverage);
+
+      const timestamp = Date.now().toString();
+      
+      // Validate leverage values
+      if (!buyLeverageStr || !sellLeverageStr) {
+        return { error: "Validation error", message: "Both buy and sell leverage must be provided" };
+      }
+
+      const requestBody = {
+        category: category,
+        symbol: symbol,
+        buyLeverage: buyLeverageStr,
+        sellLeverage: sellLeverageStr
+      };
+
+      const requestBodyStr = JSON.stringify(requestBody);
+      const requestString = timestamp + apiKey + recvWindow + requestBodyStr;
+      const signature = CryptoJS.HmacSHA256(requestString, apiSecret).toString();
+
+      const headers = {
+        "X-BAPI-API-KEY": apiKey,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-SIGN": signature,
+        "X-BAPI-RECV-WINDOW": recvWindow,
+        "Content-Type": "application/json"
+      };
+
+      const endpoint = "/v5/position/set-leverage";
+      const url = `${baseurl}${endpoint}`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: headers,
+          body: requestBodyStr
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          return data;
+        } else {
+          const errorText = await response.text();
+          return { error: response.status, message: errorText };
+        }
+      } catch (error) {
+        return { error: "Network error", message: error.message };
+      }
+    }
+
+    // Buy and Sell Actions
+    document.getElementById('buy').addEventListener('click', () => {
+      const amount = document.getElementById('amount').value;
+      const pair = document.getElementById('pair').value;
+
+      placeMarketOrder(API_KEY, API_SECRET, BASE_URL, {
+        symbol: pair,
+        side: 'Buy',
+        qty: amount
+      })
+      .then(response => {
+        if (response.error) {
+          showFlashMessage(`Error placing buy order: ${response.message}`, false);
+        } else {
+          showFlashMessage(`Bought ${amount} ${pair}`, true);
+          console.log('Buy Order:', response);
+        }
+      })
+      .catch(error => {
+        showFlashMessage(`Error placing buy order: ${error.message}`, false);
+        console.error('Error:', error);
+      });
+    });
+
+    document.getElementById('sell').addEventListener('click', () => {
+      const amount = document.getElementById('amount').value;
+      const pair = document.getElementById('pair').value;
+
+      placeMarketOrder(API_KEY, API_SECRET, BASE_URL, {
+        symbol: pair,
+        side: 'Sell',
+        qty: amount
+      })
+      .then(response => {
+        if (response.error) {
+          showFlashMessage(`Error placing sell order: ${response.message}`, false);
+        } else {
+          showFlashMessage(`Sold ${amount} ${pair}`, true);
+          console.log('Sell Order:', response);
+        }
+      })
+      .catch(error => {
+        showFlashMessage(`Error placing sell order: ${error.message}`, false);
+        console.error('Error:', error);
+      });
+    });
+
+    // Event listener for leverage submission
+    document.getElementById('submitLeverage').addEventListener('click', () => {
+      const leverageValue = document.getElementById('leverage').value;
+      
+      // Add validation for leverage value
+      if (leverageValue < 1 || leverageValue > 100) {
+        showFlashMessage('Leverage must be between 1 and 100', false, 'leverageFlashMessage');
+        return;
+      }
+
+      // Explicitly pass both buy and sell leverage values
+      setLeverage(API_KEY, API_SECRET, BASE_URL, {
+        buyLeverage: leverageValue,
+        sellLeverage: leverageValue
+      })
+      .then(response => {
+        if (response.error) {
+          showFlashMessage(`Error setting leverage: ${response.message}`, false, 'leverageFlashMessage');
+          console.error('Leverage error:', response);
+        } else {
+          showFlashMessage(`Leverage set to ${leverageValue}`, true, 'leverageFlashMessage');
+          console.log('Leverage set:', response);
+        }
+      })
+      .catch(error => {
+        showFlashMessage(`Error setting leverage: ${error.message}`, false, 'leverageFlashMessage');
+        console.error('Error:', error);
+      });
+    });
+
+    // Navigation Tab Switching
+    const tabLinks = document.querySelectorAll('.tab-link');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        const targetId = link.getAttribute('href');
+        tabContents.forEach(content => {
+          content.classList.remove('active');
+        });
+        document.querySelector(targetId).classList.add('active');
+      });
+    });
+
+    // Chart Logic
     let candlestickSeries, chart;
-    const updateInterval = 60000; // 1 minute
-    let lastPrice = 100;
+    let candleData = []; // Array to store candlestick data
+
+    // WebSocket connection to Bybit
+    function connectBybitWebSocket() {
+      const socket = new WebSocket('wss://stream.bybit.com/v5/public/linear');
+
+      socket.onopen = function(event) {
+        console.log('Bybit WebSocket connection opened');
+        // statusElement.textContent = 'Connected to Bybit';
+        // statusElement.style.backgroundColor = '#e6f3e6';
+
+        // Subscribe to BTCUSDT trades
+        socket.send(JSON.stringify({
+          op: 'subscribe',
+          args: ['publicTrade.BTCUSDT']
+        }));
+      };
+
+      socket.onmessage = function(event) {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.topic === 'publicTrade.BTCUSDT') {
+            const trade = data.data[0];
+            processTradeData(trade);
+          }
+        } catch (error) {
+          console.error('WebSocket message error:', error);
+        }
+      };
+
+      socket.onerror = function(error) {
+        console.error('Bybit WebSocket error:', error);
+        // statusElement.textContent = 'Connection Error';
+        // statusElement.style.backgroundColor = '#ffdddd';
+      };
+
+      socket.onclose = function(event) {
+        console.log('Bybit WebSocket closed');
+        // statusElement.textContent = 'Disconnected';
+        // statusElement.style.backgroundColor = '#ffdddd';
+        
+        // Attempt to reconnect after 5 seconds
+        setTimeout(connectBybitWebSocket, 5000);
+      };
+    }
+
+    // Process trade data and create/update candlesticks
+    function processTradeData(trade) {
+      const timestamp = new Date(trade.T);
+      const price = parseFloat(trade.p);
+
+      // Create or update 1-minute candlestick
+      const candleTimestamp = new Date(timestamp.getFullYear(), 
+                                       timestamp.getMonth(), 
+                                       timestamp.getDate(), 
+                                       timestamp.getHours(), 
+                                       timestamp.getMinutes(), 
+                                       0, 0);
+
+      // Find or create candle for this timestamp
+      let candle = candleData.find(c => c.time.getTime() === candleTimestamp.getTime());
+      
+      if (!candle) {
+        candle = {
+          time: candleTimestamp,
+          open: price,
+          high: price,
+          low: price,
+          close: price
+        };
+        candleData.push(candle);
+      } else {
+        candle.high = Math.max(candle.high, price);
+        candle.low = Math.min(candle.low, price);
+        candle.close = price;
+      }
+
+      // Update chart with latest candle data
+      candlestickSeries.update({
+        time: candle.time.getTime() / 1000,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close
+      });
+    }
 
     function resizeChart() {
       const container = document.getElementById('chart-container');
@@ -126,38 +594,29 @@
         upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
         wickUpColor: '#26a69a', wickDownColor: '#ef5350'
       });
-      const initialData = [];
-      for (let i = 0; i < 100; i++) {
-        const time = Math.floor(Date.now() / 1000) - (100 - i) * 60;
-        initialData.push({ time: time, open: lastPrice, high: lastPrice + Math.random() * 2, low: lastPrice - Math.random() * 2, close: lastPrice + (Math.random() - 0.5) * 4 });
-        lastPrice += (Math.random() - 0.5) * 2;
-      }
-      candlestickSeries.setData(initialData);
+      // const initialData = [];
+      // for (let i = 0; i < 100; i++) {
+      //   const time = Math.floor(Date.now() / 1000) - (100 - i) * 60;
+      //   initialData.push({ time: time, open: lastPrice, high: lastPrice + Math.random() * 2, low: lastPrice - Math.random() * 2, close: lastPrice + (Math.random() - 0.5) * 4 });
+      //   lastPrice += (Math.random() - 0.5) * 2;
+      // }
+      // candlestickSeries.setData(initialData);
     }
 
-    function updateChart() {
-      const data = { time: Math.floor(Date.now() / 1000), open: lastPrice, high: lastPrice + Math.random() * 2, low: lastPrice - Math.random() * 2, close: lastPrice + (Math.random() - 0.5) * 4 };
-      candlestickSeries.update(data);
-      lastPrice = data.close;
+    window.onload = () => {
+      connectBybitWebSocket(); // Start the WebSocket connection
+      initChart(); // Initialize the chart
+      // updateChart(); // Call updateChart to add initial data
+      // setInterval(updateChart, updateInterval); // Start the update interval
+    };
+
+    function showFlashMessage(message, isSuccess = true, elementId = 'flashMessage') {
+      const flashMessage = document.getElementById(elementId);
+      flashMessage.textContent = message;
+      flashMessage.className = `flash-message ${isSuccess ? 'flash-success' : 'flash-error'}`;
+      flashMessage.style.display = 'block';
+      setTimeout(() => { flashMessage.style.display = 'none'; }, 3000);
     }
-
-    initChart();
-    window.addEventListener('resize', resizeChart);
-    setInterval(updateChart, updateInterval);
-    
-    document.getElementById('buy').addEventListener('click', () => {
-      const amount = document.getElementById('amount').value;
-      const pair = document.getElementById('pair').value;
-      console.log(`Buying ${amount} ${pair}`);
-    });
-
-    document.querySelectorAll('.tab-link').forEach(link => {
-      link.addEventListener('click', event => {
-        event.preventDefault();
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelector(link.getAttribute('href')).classList.add('active');
-      });
-    });
   </script>
 </body>
 </html>
